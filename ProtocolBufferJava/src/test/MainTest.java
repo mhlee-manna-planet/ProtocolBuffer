@@ -6,17 +6,28 @@ import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
 
 import com.example.tutorial.PersonProto.AddressBook;
 import com.example.tutorial.PersonProto.AddressBook.Builder;
 import com.example.tutorial.PersonProto.Person;
+import com.google.protobuf.CodedInputStream;
+import com.google.protobuf.DescriptorProtos.DescriptorProto;
+import com.google.protobuf.DescriptorProtos.FieldDescriptorProto;
+import com.google.protobuf.DescriptorProtos.FileDescriptorProto;
+import com.google.protobuf.DescriptorProtos.FileDescriptorSet;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.Descriptors.FileDescriptor;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 public class MainTest {
 	static final String AddressBookCSharpFilePath = "../ProtoFiles/AddressBook.csharp.data";
 	static final String AddressBookJavaFilePath = "../ProtoFiles/AddressBook.java.data";
+	static final String AddressBookProtoFilePath = "../ProtoFiles/AddressBook.proto";
+	static final String AddressBookDescriptorFilePath = "../ProtoFiles/AddressBook.dp";
+	static final String PersonDescriptorFilePath = "../ProtoFiles/Person.desc";
 
 	public static void main(String[] args) {
 		createAddressBook();
@@ -121,6 +132,54 @@ public class MainTest {
 		Person person = personBuilder.buildPartial();
 		
 		printPerson(person);
+		System.out.println();
+		
+		//
+		// Person Descriptor를 파일에 저장
+		//
+		try (FileOutputStream os = new FileOutputStream(PersonDescriptorFilePath)) {
+			desc.toProto().writeTo(os);
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		
+		//
+		// Person Descriptor 파일에서 로드
+		//
+		try (FileInputStream is = new FileInputStream(PersonDescriptorFilePath)) {
+			DescriptorProto dp = DescriptorProto.parseFrom(is);
+			for (var field : dp.getFieldList()) {
+				System.out.format("Field, Name: %s, Number: %d\n", field.getName(), field.getNumber());
+			}
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		System.out.println();
+		
+		//
+		// 컴파일 타임에 생성되는 .dp 파일에서 로드
+		//
+		try (FileInputStream is = new FileInputStream(AddressBookDescriptorFilePath)) {
+			FileDescriptorSet fds = FileDescriptorSet.parseFrom(is);
+			List<FileDescriptorProto> fdps = fds.getFileList();
+			for (var fdp : fdps) {
+				for (var message : fdp.getMessageTypeList()) {
+					for (var field : message.getFieldList()) {
+						System.out.format("Message: %s, Name: %s, Number: %d\n", message.getName(), field.getName(), field.getNumber());
+					}
+				}
+			}
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+		System.out.println();
+		
 	}
-
+	
 }
