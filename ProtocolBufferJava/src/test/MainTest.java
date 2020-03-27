@@ -8,7 +8,10 @@ import java.io.IOException;
 import java.nio.file.Path;
 
 import com.example.tutorial.PersonProto.AddressBook;
+import com.example.tutorial.PersonProto.AddressBook.Builder;
 import com.example.tutorial.PersonProto.Person;
+import com.google.protobuf.Descriptors.Descriptor;
+import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.InvalidProtocolBufferException;
 
 public class MainTest {
@@ -19,6 +22,7 @@ public class MainTest {
 		createAddressBook();
 		loadAddressBook(AddressBookJavaFilePath);
 		loadAddressBook(AddressBookCSharpFilePath);
+		fieldAccessTest();
 	}
 
 	private static void createAddressBook() {
@@ -87,4 +91,36 @@ public class MainTest {
 			String.format("Person, Name:%s, Id:%d, Email:%s, EmailSerialized:%s, Money:%d, MoneySerialized:%s",
 					person.getName(), person.getId(), person.getEmail(), person.hasEmail(), person.getMoney(), person.hasMoney()));
 	}
+
+	/**
+	 * 편리하게 필드 조회할 수 있는 방법이 있는지 조사
+	 */
+	private static void fieldAccessTest() {
+		// Person 객체에 대한 Descriptor 획득
+		Descriptor desc = Person.getDescriptor();
+		// Person 객체 빌더 생성
+		com.example.tutorial.PersonProto.Person.Builder personBuilder = Person.newBuilder();
+
+		//
+		// 필드 이름으로 설정
+		//
+		// "name" 필드에 대한 Descriptor 획득
+		FieldDescriptor nameField = desc.findFieldByName("name");
+		// "name" 필드에 값 설정 (앞에서 획득한 FieldDescriptor 이용)
+		personBuilder.setField(nameField, "JJ");
+		
+		//
+		// 필드 번호로 설정
+		//
+		// "id" 필드 번호로 Descriptor 획득
+		FieldDescriptor idField = desc.findFieldByNumber(2);
+		// "id" 필드에 값 설정
+		personBuilder.setField(idField, 43);
+		
+		// Person 객체 빌드
+		Person person = personBuilder.buildPartial();
+		
+		printPerson(person);
+	}
+
 }
