@@ -15,18 +15,23 @@ import com.example.tutorial.PersonProto.Person;
 import com.google.protobuf.CodedInputStream;
 import com.google.protobuf.DescriptorProtos.DescriptorProto;
 import com.google.protobuf.DescriptorProtos.FieldDescriptorProto;
+import com.google.protobuf.DescriptorProtos.FieldDescriptorProtoOrBuilder;
 import com.google.protobuf.DescriptorProtos.FileDescriptorProto;
 import com.google.protobuf.DescriptorProtos.FileDescriptorSet;
 import com.google.protobuf.Descriptors.Descriptor;
+import com.google.protobuf.Descriptors.DescriptorValidationException;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Descriptors.FileDescriptor;
+import com.google.protobuf.Descriptors.OneofDescriptor;
+import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.Message;
 
 public class MainTest {
 	static final String AddressBookCSharpFilePath = "../ProtoFiles/AddressBook.csharp.data";
 	static final String AddressBookJavaFilePath = "../ProtoFiles/AddressBook.java.data";
 	static final String AddressBookProtoFilePath = "../ProtoFiles/AddressBook.proto";
-	static final String AddressBookDescriptorFilePath = "../ProtoFiles/AddressBook.dp";
+	static final String AddressBookDescriptorFilePath = "../ProtoFiles/AddressBook.pb";
 	static final String PersonDescriptorFilePath = "../ProtoFiles/Person.desc";
 
 	public static void main(String[] args) {
@@ -34,6 +39,7 @@ public class MainTest {
 		loadAddressBook(AddressBookJavaFilePath);
 		loadAddressBook(AddressBookCSharpFilePath);
 		fieldAccessTest();
+		dynamicMessageTest();
 	}
 
 	private static void createAddressBook() {
@@ -97,16 +103,13 @@ public class MainTest {
 		System.out.println();
 	}
 	
-	private static void printPerson(Person person) {
-		System.out.println(
-			String.format("Person, Name:%s, Id:%d, Email:%s, EmailSerialized:%s, Money:%d, MoneySerialized:%s",
-					person.getName(), person.getId(), person.getEmail(), person.hasEmail(), person.getMoney(), person.hasMoney()));
-	}
-
 	/**
 	 * 편리하게 필드 조회할 수 있는 방법이 있는지 조사
 	 */
 	private static void fieldAccessTest() {
+		//
+		// 컴파일 타임에 객체에 대한 정보를 알고 있을 때
+		//
 		// Person 객체에 대한 Descriptor 획득
 		Descriptor desc = Person.getDescriptor();
 		// Person 객체 빌더 생성
@@ -133,7 +136,7 @@ public class MainTest {
 		
 		printPerson(person);
 		System.out.println();
-		
+
 		//
 		// Person Descriptor를 파일에 저장
 		//
@@ -159,27 +162,108 @@ public class MainTest {
 			e.printStackTrace();
 		}
 		System.out.println();
+	}
+	
+	/**
+	 * 런타임에 프로토콜버퍼 디스크립터 기반의 메시지 생성하기
+	 */
+	private static void dynamicMessageTest() {
+		System.out.println("========== dynamicMessageTest ==========");
 		
 		//
-		// 컴파일 타임에 생성되는 .dp 파일에서 로드
+		// 프로토콜버퍼 정보가 들어있는 .pb 파일 로드
 		//
 		try (FileInputStream is = new FileInputStream(AddressBookDescriptorFilePath)) {
 			FileDescriptorSet fds = FileDescriptorSet.parseFrom(is);
 			List<FileDescriptorProto> fdps = fds.getFileList();
 			for (var fdp : fdps) {
-				for (var message : fdp.getMessageTypeList()) {
-					for (var field : message.getFieldList()) {
-						System.out.format("Message: %s, Name: %s, Number: %d\n", message.getName(), field.getName(), field.getNumber());
-					}
+				//
+				// FileDescriptor 획득
+				//
+				FileDescriptor fd = FileDescriptor.buildFrom(fdp, new FileDescriptor[0]);
+				
+				//
+				// FileDescriptor로부터 실제 메시지 타입 획득 (AddressBook, Person 등등)
+				//
+				Descriptor personDesc = fd.findMessageTypeByName("Person");
+				Descriptor addressBookDesc = fd.findMessageTypeByName("AddressBook");
+				if (personDesc == null || addressBookDesc == null) {
+					System.out.println("Can't find message type.");
+					continue;
 				}
+				
+				//
+				// 다이내믹 메시지 형태로 빌드
+				//
+				DynamicMessage.Builder personBuilder = DynamicMessage.newBuilder(personDesc);
+				personBuilder.setField(personDesc.getFields().get(0), "홍길동");
+				personBuilder.setField(personDesc.getFields().get(1), 18);
+				personBuilder.setField(personDesc.getFields().get(2), "gdhong@example.com");
+				byte[] personData = personBuilder.build().toByteArray();
+				
+				//
+				// 바이트 배열을 파싱해서 다이내믹 메시지 생성
+				//
+				DynamicMessage person = DynamicMessage.parseFrom(personDesc, personData);
+				for (var elem : person.getAllFields().entrySet()) {
+					System.out.format("DynamicMessage, Type:%s, FieldName:%s, FieldValue:%s\n", personDesc.getName(), elem.getKey().getName(), elem.getValue().toString());
+				}
+				
+				//
+				// AddressBook을 다이내믹 메시지 형태로 빌드 (반복 필드 값 설정)
+				//
+				DynamicMessage.Builder addressBookBuilder = DynamicMessage.newBuilder(addressBookDesc);
+				FieldDescriptor field = addressBookDesc.findFieldByName("people");
+				{
+					DynamicMessage.Builder john = addressBookBuilder.newBuilderForField(field);
+					john.setField(personDesc.getFields().get(0), "John");
+					john.setField(personDesc.getFields().get(1), 40);
+					john.setField(personDesc.getFields().get(2), "john@example.com");
+					addressBookBuilder.addRepeatedField(field, john.build());
+					
+					DynamicMessage.Builder jane = addressBookBuilder.newBuilderForField(field);
+					jane.setField(personDesc.getFields().get(0), "Jane");
+					jane.setField(personDesc.getFields().get(1), 33);
+					jane.setField(personDesc.getFields().get(3), 150_000);
+					addressBookBuilder.addRepeatedField(field, jane.build());
+				}
+				byte[] addressBookData = addressBookBuilder.build().toByteArray();
+				
+				//
+				// 바이트 배열을 파싱해서 다이내믹 메시지 생성 (암묵적인 타겟은 AddressBook)
+				//
+				DynamicMessage addressBook = DynamicMessage.parseFrom(addressBookDesc, addressBookData);
+				for (var elem : addressBook.getAllFields().entrySet()) {
+					System.out.format("DynamicMessage, Type:%s, FieldName:%s, FieldValue:%s\n", addressBookDesc.getName(), elem.getKey().getName(), elem.getValue().toString());
+				}
+				
+				System.out.println();
 			}
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 		} catch (IOException e) {
 			e.printStackTrace();
+		} catch (DescriptorValidationException e) {
+			e.printStackTrace();
 		}
 		System.out.println();
-		
 	}
 	
+	private static void printPerson(Person person) {
+		System.out.println(
+			String.format("Person, Name:%s, Id:%d, Email:%s, EmailSerialized:%s, Money:%d, MoneySerialized:%s",
+				person.getName(), person.getId(), person.getEmail(), person.hasEmail(), person.getMoney(), person.hasMoney()));
+	}
+	
+	/**
+	 * 필드 리스트에서 필드 찾기
+	 */
+	private static FieldDescriptorProto findFieldByName(List<FieldDescriptorProto> fields, String fieldName) {
+		for (var field : fields) {
+			if (field.getName().compareTo(fieldName) == 0) {
+				return field;
+			}
+		}
+		return null;
+	}
 }
